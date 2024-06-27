@@ -1,0 +1,203 @@
+import React, { useState, useEffect } from 'react';
+import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+
+// Chess piece Unicode characters
+const pieces = {
+  'w': {
+    'p': '♙', 'r': '♖', 'n': '♘', 'b': '♗', 'q': '♕', 'k': '♔'
+  },
+  'b': {
+    'p': '♟', 'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚'
+  }
+};
+
+// Piece values for evaluation
+const pieceValues = {
+  'p': 1, 'r': 5, 'n': 3, 'b': 3, 'q': 9, 'k': 100
+};
+
+// Initial board setup for 24x12 board with three sets of pieces
+const initialBoard = [
+  ['br', 'bn', 'bb', 'bq', 'bk', 'bb', 'bn', 'br', 'br', 'bn', 'bb', 'bq', 'bk', 'bb', 'bn', 'br', 'br', 'bn', 'bb', 'bq', 'bk', 'bb', 'bn', 'br'],
+  ['bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp'],
+  Array(24).fill(null),
+  Array(24).fill(null),
+  Array(24).fill(null),
+  Array(24).fill(null),
+  Array(24).fill(null),
+  Array(24).fill(null),
+  Array(24).fill(null),
+  Array(24).fill(null),
+  ['wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp'],
+  ['wr', 'wn', 'wb', 'wq', 'wk', 'wb', 'wn', 'wr', 'wr', 'wn', 'wb', 'wq', 'wk', 'wb', 'wn', 'wr', 'wr', 'wn', 'wb', 'wq', 'wk', 'wb', 'wn', 'wr']
+];
+
+const ChessGame = () => {
+  const [board, setBoard] = useState(initialBoard);
+  const [turn, setTurn] = useState('w');
+  const [gameOver, setGameOver] = useState(false);
+  const [winner, setWinner] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(true);
+
+  useEffect(() => {
+    let timer;
+    if (isPlaying && !gameOver) {
+      timer = setInterval(() => {
+        makeMove();
+      }, 500);
+    }
+
+    return () => clearInterval(timer);
+  }, [board, turn, gameOver, isPlaying]);
+
+  const makeMove = () => {
+    const bestMove = findBestMove(board, turn);
+    if (!bestMove) {
+      setGameOver(true);
+      setWinner(turn === 'w' ? 'Black' : 'White');
+      return;
+    }
+
+    const newBoard = JSON.parse(JSON.stringify(board));
+    newBoard[bestMove.toRow][bestMove.toCol] = newBoard[bestMove.fromRow][bestMove.fromCol];
+    newBoard[bestMove.fromRow][bestMove.fromCol] = null;
+
+    setBoard(newBoard);
+    setTurn(turn === 'w' ? 'b' : 'w');
+
+    if (isCheckmate(newBoard, turn === 'w' ? 'b' : 'w')) {
+      setGameOver(true);
+      setWinner(turn === 'w' ? 'White' : 'Black');
+    } else if (isStalemate(newBoard, turn === 'w' ? 'b' : 'w')) {
+      setGameOver(true);
+      setWinner('Draw');
+    }
+  };
+
+  const findBestMove = (currentBoard, color) => {
+    const possibleMoves = getAllPossibleMoves(color, currentBoard);
+    if (possibleMoves.length === 0) return null;
+
+    // For simplicity, just return a random move
+    return possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+  };
+
+  const getAllPossibleMoves = (color, currentBoard) => {
+    const moves = [];
+    for (let i = 0; i < 12; i++) {
+      for (let j = 0; j < 24; j++) {
+        if (currentBoard[i][j] && currentBoard[i][j][0] === color) {
+          const pieceMoves = getPieceMoves(i, j, currentBoard[i][j], currentBoard);
+          moves.push(...pieceMoves);
+        }
+      }
+    }
+    return moves;
+  };
+
+  const getPieceMoves = (row, col, piece, currentBoard) => {
+    const moves = [];
+    const color = piece[0];
+    const type = piece[1];
+
+    const directions = {
+      'p': color === 'w' ? [[-1, 0]] : [[1, 0]],
+      'r': [[0, 1], [1, 0], [0, -1], [-1, 0]],
+      'n': [[2, 1], [2, -1], [-2, 1], [-2, -1], [1, 2], [1, -2], [-1, 2], [-1, -2]],
+      'b': [[1, 1], [1, -1], [-1, 1], [-1, -1]],
+      'q': [[0, 1], [1, 0], [0, -1], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]],
+      'k': [[0, 1], [1, 0], [0, -1], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]]
+    };
+
+    for (const [dx, dy] of directions[type]) {
+      let newRow = row + dx;
+      let newCol = col + dy;
+      
+      while (isValidMove(newRow, newCol)) {
+        if (!currentBoard[newRow][newCol]) {
+          moves.push({ fromRow: row, fromCol: col, toRow: newRow, toCol: newCol });
+        } else if (currentBoard[newRow][newCol][0] !== color) {
+          moves.push({ fromRow: row, fromCol: col, toRow: newRow, toCol: newCol });
+          break;
+        } else {
+          break;
+        }
+        
+        if (type === 'p' || type === 'n' || type === 'k') break; // These pieces only move once
+        
+        newRow += dx;
+        newCol += dy;
+      }
+    }
+
+    return moves;
+  };
+
+  const isValidMove = (row, col) => {
+    return row >= 0 && row < 12 && col >= 0 && col < 24;
+  };
+
+  const isCheckmate = (currentBoard, color) => {
+    return getAllPossibleMoves(color, currentBoard).length === 0;
+  };
+
+  const isStalemate = (currentBoard, color) => {
+    return getAllPossibleMoves(color, currentBoard).length === 0;
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
+      <h1 className="text-3xl font-bold mb-4">Expanded Aggressive Chess Game (24x12)</h1>
+      <div className="bg-white p-4 rounded shadow-lg overflow-auto">
+        <div className="inline-block">
+          {board.map((row, rowIndex) => (
+            <div key={rowIndex} className="flex">
+              {row.map((cell, colIndex) => (
+                <div
+                  key={colIndex}
+                  className={`w-8 h-8 flex items-center justify-center text-xl ${
+                    (rowIndex + colIndex) % 2 === 0 ? 'bg-gray-200' : 'bg-gray-400'
+                  }`}
+                >
+                  {cell && pieces[cell[0]][cell[1]]}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="mt-4 text-xl font-semibold">
+        {gameOver ? `Game Over! ${winner}` : `Current turn: ${turn === 'w' ? 'White' : 'Black'}`}
+      </div>
+      <button 
+        className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        onClick={() => setIsPlaying(!isPlaying)}
+      >
+        {isPlaying ? 'Pause' : 'Resume'}
+      </button>
+      <AlertDialog open={gameOver}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Game Over!</AlertDialogTitle>
+            <AlertDialogDescription>
+              {winner === 'Draw' ? "It's a draw!" : `${winner} has won the game.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => {
+              setBoard(initialBoard);
+              setTurn('w');
+              setGameOver(false);
+              setWinner(null);
+              setIsPlaying(true);
+            }}>
+              Play Again
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+};
+
+export default ChessGame;
