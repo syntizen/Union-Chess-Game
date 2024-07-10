@@ -1,6 +1,6 @@
 # Expanded Aggressive Chess Game (24x12)(24x16)
 
-Welcome to the Expanded Aggressive Chess Game! This game is a custom implementation of chess with an enlarged board of 24x12 and three sets of pieces for each player. The game automatically makes moves based on a simplified AI.
+Welcome to the Expanded Aggressive Chess Game! This game is a custom implementation of chess with an enlarged board of 24x12 24x16 and three sets of pieces for each player. The game automatically makes moves based on a simplified AI.
 
 ## Features
 
