@@ -1,0 +1,214 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+
+const pieces = { 'w': { 'p': '♙', 'r': '♖', 'n': '♘', 'b': '♗', 'q': '♕', 'k': '♔' }, 'b': { 'p': '♟', 'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚' } };
+const pieceValues = { 'p': 10, 'r': 50, 'n': 30, 'b': 30, 'q': 90, 'k': 900 };
+const initialBoard = [
+  ['br','bn','bb','bq','bk','bb','bn','br','br','bn','bb','bq','bk','bb','bn','br','br','bn','bb','bq','bk','bb','bn','br'],
+  ['bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp'],
+  ['bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp','bp'],
+  ...Array(10).fill(Array(24).fill(null)),
+  ['wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp'],
+  ['wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp','wp'],
+  ['wr','wn','wb','wq','wk','wb','wn','wr','wr','wn','wb','wq','wk','wb','wn','wr','wr','wn','wb','wq','wk','wb','wn','wr']
+];
+
+const ChessGame = () => {
+  const [board, setBoard] = useState(initialBoard);
+  const [turn, setTurn] = useState('w');
+  const [gameOver, setGameOver] = useState(false);
+  const [winner, setWinner] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [defenseStructure, setDefenseStructure] = useState({ w: [], b: [] });
+
+  const makeMove = useCallback((currentBoard, move) => {
+    const newBoard = currentBoard.map(row => [...row]);
+    newBoard[move.toRow][move.toCol] = newBoard[move.fromRow][move.fromCol];
+    newBoard[move.fromRow][move.fromCol] = null;
+    return newBoard;
+  }, []);
+
+  const getPieceMoves = useCallback((row, col, piece, currentBoard) => {
+    const [color, type] = piece;
+    const directions = {
+      'p': color === 'w' ? [[-1, 0], [-1, -1], [-1, 1]] : [[1, 0], [1, -1], [1, 1]],
+      'r': [[0, 1], [1, 0], [0, -1], [-1, 0]],
+      'n': [[2, 1], [2, -1], [-2, 1], [-2, -1], [1, 2], [1, -2], [-1, 2], [-1, -2]],
+      'b': [[1, 1], [1, -1], [-1, 1], [-1, -1]],
+      'q': [[0, 1], [1, 0], [0, -1], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]],
+      'k': [[0, 1], [1, 0], [0, -1], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]]
+    };
+    return directions[type].flatMap(([dx, dy]) => {
+      const moves = [];
+      let newRow = row + dx, newCol = col + dy;
+      while (newRow >= 0 && newRow < 16 && newCol >= 0 && newCol < 24 && Math.abs(newRow - row) < 4 && Math.abs(newCol - col) < 4) {
+        if (!currentBoard[newRow][newCol] || currentBoard[newRow][newCol][0] !== color) {
+          moves.push({ fromRow: row, fromCol: col, toRow: newRow, toCol: newCol });
+          if (currentBoard[newRow][newCol] || type === 'p' || type === 'n' || type === 'k') break;
+        } else break;
+        newRow += dx; newCol += dy;
+      }
+      return moves;
+    });
+  }, []);
+
+  const getAllPossibleMoves = useCallback((color, currentBoard) => 
+    currentBoard.flatMap((row, i) => row.flatMap((cell, j) => 
+      cell && cell[0] === color ? getPieceMoves(i, j, cell, currentBoard) : []
+    )), [getPieceMoves]);
+
+  const evaluateMove = useCallback((currentBoard, move, color) => {
+    const newBoard = makeMove(currentBoard, move);
+    let score = 0;
+    const opponentColor = color === 'w' ? 'b' : 'w';
+    newBoard.forEach((row, i) => row.forEach((piece, j) => {
+      if (piece) {
+        const value = pieceValues[piece[1]];
+        score += piece[0] === color ? value : -value;
+        if (piece[1] === 'p') score += (piece[0] === color ? 1 : -1) * (color === 'w' ? 15 - i : i) * 0.1;
+      }
+    }));
+    const centerControl = [[7,11], [7,12], [8,11], [8,12]];
+    const kingField = color === 'w' ? [[15,3], [15,4], [15,5]] : [[0,3], [0,4], [0,5]];
+    const cornerControl = [[1,0], [1,23], [14,0], [14,23]];
+    [...centerControl, ...kingField, ...cornerControl].forEach(([row, col]) => {
+      if (newBoard[row][col] && newBoard[row][col][0] === color) score += 15;
+    });
+    const myMoves = getAllPossibleMoves(color, newBoard);
+    const opponentMoves = getAllPossibleMoves(opponentColor, newBoard);
+    score += myMoves.length - opponentMoves.length;
+    score += myMoves.filter(m => newBoard[m.toRow][m.toCol] && newBoard[m.toRow][m.toCol][0] === opponentColor)
+      .reduce((sum, m) => sum + pieceValues[newBoard[m.toRow][m.toCol][1]] / 5, 0);
+    score -= opponentMoves.filter(m => newBoard[m.toRow][m.toCol] && newBoard[m.toRow][m.toCol][0] === color)
+      .reduce((sum, m) => sum + pieceValues[newBoard[m.toRow][m.toCol][1]] / 5, 0);
+    const pawnShieldRows = color === 'w' ? [14, 15] : [0, 1];
+    score += pawnShieldRows.reduce((sum, row) => 
+      sum + newBoard[row].filter((piece, col) => piece === color + 'p' && Math.abs(col - 12) <= 2).length * 5, 0);
+    score += defenseStructure[color].reduce((sum, [row, col]) => newBoard[row][col] === color + 'p' ? sum + 5 : sum, 0);
+    return score + Math.random() * 5;
+  }, [makeMove, getAllPossibleMoves, defenseStructure]);
+
+  const findBestMove = useCallback((currentBoard, color, excludePieces) => {
+    const moves = getAllPossibleMoves(color, currentBoard).filter(move => !excludePieces.includes(currentBoard[move.fromRow][move.fromCol]));
+    return moves.reduce((best, move) => {
+      const score = evaluateMove(currentBoard, move, color);
+      return score > best.score ? { move, score } : best;
+    }, { move: null, score: -Infinity }).move;
+  }, [getAllPossibleMoves, evaluateMove]);
+
+  const buildDefensiveStructure = useCallback((currentBoard, color) => {
+    const baseRow = color === 'w' ? 14 : 1;
+    const direction = color === 'w' ? -1 : 1;
+    const newStructure = [];
+    for (let col = 0; col < 24; col += 3) {
+      if (currentBoard[baseRow][col] === color + 'p') {
+        newStructure.push([baseRow, col]);
+      } else if (currentBoard[baseRow + direction][col] === null) {
+        const move = { fromRow: baseRow, fromCol: col - 1, toRow: baseRow + direction, toCol: col };
+        if (currentBoard[baseRow][col - 1] === color + 'p') {
+          setBoard(makeMove(currentBoard, move));
+          newStructure.push([baseRow + direction, col]);
+        }
+      }
+    }
+    setDefenseStructure(prev => ({ ...prev, [color]: newStructure }));
+  }, [makeMove]);
+
+  const attackOpponent = useCallback((currentBoard, color) => {
+    const opponentColor = color === 'w' ? 'b' : 'w';
+    const attackZone = color === 'w' ? [0, 1, 2, 3] : [12, 13, 14, 15];
+    const attackMoves = getAllPossibleMoves(color, currentBoard)
+      .filter(move => attackZone.includes(move.toRow) && currentBoard[move.toRow][move.toCol] && currentBoard[move.toRow][move.toCol][0] === opponentColor);
+    if (attackMoves.length > 0) {
+      const bestAttackMove = attackMoves.reduce((best, move) => {
+        const score = evaluateMove(currentBoard, move, color);
+        return score > best.score ? { move, score } : best;
+      }, { move: null, score: -Infinity }).move;
+      if (bestAttackMove) {
+        setBoard(makeMove(currentBoard, bestAttackMove));
+        return true;
+      }
+    }
+    return false;
+  }, [getAllPossibleMoves, evaluateMove, makeMove]);
+
+  const makeComputerMoves = useCallback(async () => {
+    let newBoard = [...board];
+    let movedPieces = [];
+    buildDefensiveStructure(newBoard, turn);
+    if (attackOpponent(newBoard, turn)) {
+      movedPieces.push(newBoard[newBoard.length - 1][newBoard[0].length - 1]);
+    }
+    for (let i = movedPieces.length; i < 3; i++) {
+      const bestMove = findBestMove(newBoard, turn, movedPieces);
+      if (bestMove) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        newBoard = makeMove(newBoard, bestMove);
+        setBoard(newBoard);
+        movedPieces.push(newBoard[bestMove.toRow][bestMove.toCol]);
+      } else break;
+    }
+    const nextTurn = turn === 'w' ? 'b' : 'w';
+    if (getAllPossibleMoves(nextTurn, newBoard).length === 0) {
+      setGameOver(true);
+      setWinner(turn === 'w' ? 'White' : 'Black');
+    } else setTurn(nextTurn);
+  }, [board, turn, buildDefensiveStructure, attackOpponent, findBestMove, makeMove, getAllPossibleMoves]);
+
+  useEffect(() => {
+    let timer;
+    if (isPlaying && !gameOver) timer = setTimeout(makeComputerMoves, 500);
+    return () => clearTimeout(timer);
+  }, [isPlaying, gameOver, makeComputerMoves]);
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
+      <h1 className="text-3xl font-bold mb-4">Aggressive Expanded Chess (24x16)</h1>
+      <div className="bg-white p-4 rounded shadow-lg overflow-auto">
+        <div className="inline-block">
+          {board.map((row, rowIndex) => (
+            <div key={rowIndex} className="flex">
+              {row.map((cell, colIndex) => (
+                <div key={colIndex} className={`w-6 h-6 flex items-center justify-center text-sm ${(rowIndex + colIndex) % 2 === 0 ? 'bg-gray-200' : 'bg-gray-400'}`}>
+                  {cell && pieces[cell[0]][cell[1]]}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="mt-4 text-xl font-semibold">
+        {gameOver ? `Game Over! ${winner} wins!` : `Current turn: ${turn === 'w' ? 'White' : 'Black'}`}
+      </div>
+      <button 
+        className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        onClick={() => setIsPlaying(!isPlaying)}
+      >
+        {isPlaying ? 'Pause' : 'Resume'}
+      </button>
+      <AlertDialog open={gameOver}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Game Over!</AlertDialogTitle>
+            <AlertDialogDescription>
+              {winner} has won the game.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => {
+              setBoard(initialBoard);
+              setTurn('w');
+              setGameOver(false);
+              setWinner(null);
+              setIsPlaying(true);
+            }}>
+              Play Again
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+};
+
+export default ChessGame;
